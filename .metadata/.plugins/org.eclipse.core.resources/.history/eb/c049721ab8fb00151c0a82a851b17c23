@@ -1,0 +1,133 @@
+// 原始
+function data1() {
+	var data = new Array();
+	for (var i = 0; i < 20; i++) {
+		data[i] = {};
+		data[i].type = "stackedArea";
+		data[i].dataPoints = new Array(20);
+	}
+	for (var i = 0; i < jsonData.length; i++) {
+		for (var j = 0; j < jsonData[i].length; j++) {
+			data[i].dataPoints[j] = {
+				x : j,
+				y : jsonData[i][j]
+			};
+		}
+	}
+	return data;
+}
+
+// 平滑
+function data2() {
+// 采用三次样条的方式进行平滑，输入数据依旧是jsonData,对每个序列分别进行处理和差值。
+// S_i = a_i+b_i(x)+c_i(x^2)+d_i(x^3),i = 0,1,...,59
+// 同时，有20个序列，因此采用4个二维数组来存储这四个参数，数组维数是20（个序列）*60(段)
+// 同时，记二阶导为m，有20*61段,采用自由边界(中间59加前后2个)，即m_0=m_59 = 0
+	var div = 10;//每个区间间隔为十个。
+	var a = new Array();
+	var b = new Array();
+	var c = new Array();
+	var d = new Array();
+	var m = new Array();
+	// 首先计算m
+	for (var i = 0; i < 20; i++){
+		for (var j=0; j < 61; j++){
+			
+		}
+	}
+	// 其次计算a,b,c,d
+	for (var i = 0; i < 20; i++){
+		for (var j=0; j < 60; j++){
+			a[i][j] = jsonData[i][j];
+			
+		}
+	}
+	
+}
+
+// 平滑+优化1
+function data3() {
+
+}
+
+// 平滑+优化2
+function data4() {
+
+}
+// 平滑+优化3
+function data5() {
+
+}
+
+// 平滑+次序调整
+function data6() {
+
+}
+// 平滑+斜率优化
+function data7() {
+
+}
+window.onload = function() {
+	var chart1 = new CanvasJS.Chart("chart1", {
+		colorSet : 'colorSet1',
+		title : {
+			text : "原始"
+		},
+		data : data1()
+	});
+	chart1.render();
+
+	var chart2 = new CanvasJS.Chart("chart2", {
+		colorSet : 'colorSet1',
+		title : {
+			text : "平滑"
+		},
+		data : data2()
+	});
+	chart2.render();
+
+	var chart3 = new CanvasJS.Chart("chart3", {
+		colorSet : 'colorSet1',
+		title : {
+			text : "平滑+优化1"
+		},
+		data : data3()
+	});
+	chart3.render();
+
+	var chart4 = new CanvasJS.Chart("chart4", {
+		colorSet : 'colorSet1',
+		title : {
+			text : "平滑+优化2"
+		},
+		data : data4()
+	});
+	chart4.render();
+	
+	var chart5 = new CanvasJS.Chart("chart5", {
+		colorSet : 'colorSet1',
+		title : {
+			text : "平滑+优化3"
+		},
+		data : data5()
+	});
+	chart5.render();
+	
+	var chart6 = new CanvasJS.Chart("chart6", {
+		colorSet : 'colorSet1',
+		title : {
+			text : "平滑+次序调整"
+		},
+		data : data6()
+	});
+	chart6.render();
+	
+	var chart7 = new CanvasJS.Chart("chart7", {
+		colorSet : 'colorSet1',
+		title : {
+			text : "平滑+二阶导平滑"
+		},
+		data : data7()
+	});
+	chart7.render();
+}

@@ -1,0 +1,91 @@
+<?php
+// 用于向数据库中抽取customer数据
+// 也用于存储实体
+require_once __DIR__ . '/DBHelper.php';
+
+class CustomerObject extends DataBase{
+	public $id;
+	public $rid;
+	public $cu_name;
+	public $cu_org;
+	public $cu_address;
+	public $cu_reg_address;
+	public $phone;
+	public $comment;
+	public $status;
+	public $cremation;
+	public $identity;
+	
+	const table = 'customer';
+	
+	function __construct(){
+		$a = func_get_args();
+		$i = func_num_args();
+		if (method_exists($this,$f='__construct'.$i)) {
+			call_user_func_array(array($this,$f),$a);
+		}else{
+			parent::__construct();
+		}
+	}
+	
+	function __construct7($rid,$cu_name,$cu_org,$cu_address,$cu_reg_address,$phone, $comment) {
+		parent::__construct();
+		$this->rid = $rid;
+		$this->cu_name = $cu_name;
+		$this->cu_org = $cu_org;
+		$this->cu_address = $cu_address;
+		$this->cu_reg_address = $cu_reg_address;
+		$this->phone = $phone;
+		$this->comment = $comment;
+	}
+	
+	function __construct1($rid){
+		parent::__construct();
+		$this->rid = $rid;
+		$this->initialize_with_rid($this->rid);
+	}
+	
+	function initialize_with_rid($rid){
+		$this->rid = $rid;
+		$result = $this->query(self::table, "rid = {$rid}");
+		return $this->parseResult($result);
+	}
+	
+	function parseResult($result){
+		if ($result != FALSE){
+			$customer = $result[0];
+			$this->id = $customer['id'];
+			$this->rid = $customer['rid'];
+			$this->cu_name = $customer['cu_name'];
+			$this->cu_org = $customer['cu_org'];
+			$this->cu_address = $customer['cu_address'];
+			$this->cu_reg_address = $customer['cu_reg_address'];
+			$this->phone = $customer['phone'];
+			$this->comment = $customer['comment'];
+			$this->status = $customer['status'];
+			$this->cremation = $customer['cremation'];
+			$this->identity = $customer['identity'];
+			return TRUE;
+		}else{
+			return FALSE;
+		}
+		
+	}
+	function create_or_update(){
+		if (isset($this->id)){
+			$sql = "replace into ". self::table .
+			"(id, rid, cu_name,cu_org,cu_address,cu_reg_address,phone,comment) ".
+			"values ({$this->id},{$this->rid}, '{$this->cu_name}'".
+			",'{$this->cu_org}','{$this->cu_address}','{$this->cu_reg_address}','{$this->phone}','{$this->comment}')";
+		}else{//无id，一般为创建
+			$sql = "replace into ". self::table .
+			"(rid, cu_name,cu_org,cu_address,cu_reg_address,phone,comment) ".
+			"values ('{$this->rid}', '{$this->cu_name}'".
+			",'{$this->cu_org}','{$this->cu_address}','{$this->cu_reg_address}','{$this->phone}','{$this->comment}')";
+		}
+		echo "CREATE".$sql;
+		return $this->execute($sql);
+	}
+	
+	
+}

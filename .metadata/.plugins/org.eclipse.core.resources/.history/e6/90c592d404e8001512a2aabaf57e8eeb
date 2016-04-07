@@ -1,0 +1,62 @@
+<?php
+// 存储一次登录状态
+//
+require_once __DIR__ . '/DBHelper.php';
+
+class AuthObject extends DataBase{
+	public $userid;
+	public $token;
+	public $date;
+	
+	const table = 'authorize';
+	
+	function __construct(){
+		$a = func_get_args();
+		$i = func_num_args();
+		if (method_exists($this,$f='__construct'.$i)) {
+			call_user_func_array(array($this,$f),$a);
+		}
+	}
+	function __construct1($token){
+		parent::__construct();
+		$this->token = $token;
+		$this->initialize();
+	}
+	
+	function __construct3($id, $token, $date){
+		parent::__construct();
+		$this->userid = $id;
+		$this->token = $token;
+		$this->date = $date;
+	}
+	function initialize(){
+		$token = $this->token;
+		$result = $this->query(self::table, "token = '{$this->token}'");
+		if ($result != FALSE){
+			$user = $result[0];
+			$this->userid = $user['userid'];
+			$this->token = $user['token'];
+			$this->date = $user['last'];
+			return TRUE;
+		}else{
+			return FALSE;
+		}
+	}
+	/*
+	 * 返回影响的列数
+	 * */
+	function create_or_update(){
+		$sql = "replace into ". self::table . "(userid, token, last) values ('{$this->userid}','{$this->token}', '{$this->date}')";
+		return $this->execute($sql);
+	}
+	
+	function delete_self_from_db(){
+		$sql = "delete from " . self::table . " where userid={$this->userid}";
+		return $this->execute($sql);
+	}
+	
+	function delete_expire(){
+		$sql = "delete from " . self::table . " where datediff(getdate(),last) > 30";
+		return $this->execute($sql);
+	}
+}

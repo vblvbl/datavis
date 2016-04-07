@@ -1,0 +1,41 @@
+
+// 未优化
+function data1(){
+	var data = new Array();
+	for (var i = 0; i < 60; i++){
+		data[i] = {};
+		data[i].type="stackedArea";
+		data[i].datapoints = new Array(20);
+	}
+	for(var i = 0; i < jsonData.length; i++){
+		for(var j = 0; j < jsonData[i].length; j++){
+			data[i].datapoints[j] = {x:j,y:jsonData[i][j]};
+		}
+	}
+	return data;
+}
+
+//优化1
+function data2(){
+	
+}
+
+//优化2
+function data3(){
+	
+}
+
+//优化3
+function data4(){
+	
+}
+window.onload = function () {
+    var chart = new CanvasJS.Chart("chart1",
+    {
+      title:{
+        text: "A Stacked Area Chart"
+      },   
+      data: data1()
+    });
+    chart.render();
+  }
