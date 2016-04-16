@@ -1,0 +1,99 @@
+<?php
+/*
+ * 单个墓位信息
+ * */
+require_once __DIR__ . '/DBHelper.php';
+
+class TombObject extends DataBase{
+	public $id;
+	public $zone;
+	public $row;
+	public $col;
+	public $originalprice;
+	public $dealprice;
+	public $publicprice;
+	public $typecode;
+	public $statuscode;
+	public $status;
+	public $customerid;
+	public $position;
+	public $comment;
+	public $picture;
+	public $burystatus;
+	public $burydate;
+	public $death_name;
+	public $requestdate;
+	
+	const table = 'tomb';
+	function __construct(){
+		$a = func_get_args();
+		$i = func_num_args();
+		if (method_exists($this,$f='__construct'.$i)) {
+			call_user_func_array(array($this,$f),$a);
+		}else{
+			parent::__construct();
+		}
+	}
+	
+	function __construct3($zone,$row,$col){
+		parent::__construct();
+		$this->initialize_with_zrc($zone, $row, $col);
+	}
+	
+	function dump(){
+		$sql = "select * from tombtype where id={$this->typecode} limit 1";
+		$result = $db->pdo->query ( $sql )->fetchAll ( PDO::FETCH_ASSOC )[0]['tombtype'];
+		return [
+				'id'=> $this->id,
+				'zone'=> $this->zone,
+				'row'=> $this->row,
+				'col'=> $this->col,
+				'originalprice'=> $this->originalprice,
+				'dealprice'=> $this->dealprice,
+				'publicprice'=> $this->publicprice,
+				'typecode'=> $this->typecode,
+				'statuscode'=> $this->statuscode,
+				'status'=> $this->status,
+				'customerid'=> $this->customerid,
+				'position'=> $this->position,
+				'comment'=> $this->comment,
+				'picture'=> $this->picture,
+				'burystatus'=> $this->burystatus,
+				'burydate'=> $this->burydate,
+				'death_name'=>$this->death_name,
+				'requestdate'=>$this->requestdate
+		];
+	}
+	function initialize_with_zrc($zone,$row,$col){
+		$sql = "select * from " . self::table . " where zone={$zone} and row = {$row} and col={$col}";
+		$result = $this->pdo->query($sql);
+		if($result === FALSE){//no result
+			return FALSE;
+		}else{
+			$result = $result->fetchAll(PDO::FETCH_ASSOC)[0];
+			$this->id = $result['id'];
+			$this->zone = $result['zone'];
+			$this->row = $result['row'];
+			$this->col = $result['col'];
+			$this->originalprice= $result['originalprice'];
+			$this->dealprice= $result['dealprice'];
+			$this->publicprice= $result['publicprice'];
+			$this->typecode= $result['typecode'];
+			$this->statuscode = $result['statuscode'];
+			$this->status = $result['status'];
+			$this->customerid = $result['customerid']; 
+			$this->position= $result['position'];
+			$this->comment= $result['comment'];
+			$this->picture= $result['picture'];
+			$this->burystatus= $result['burystatus'];
+			$this->burydate= $result['burydate'];
+			$this->death_name = $result['death_name'];
+			$this->requestdate = $result['requestdate'];
+			return TRUE;
+		}
+	}
+	function restore_empty(){
+		$sql = "update tomb set dealprice=0, statuscode = 1, status='空置',customerid=NULL,requestdate=NULL,death_name=NULL where id = {$this->id}";
+		$this->pdo->exec($sql);
+	}
+}

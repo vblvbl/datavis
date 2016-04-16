@@ -1,0 +1,158 @@
+<?php
+// 管理费用管理
+
+/*
+ * 管理付费
+ */
+function handle_managementfee_pay($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'cu_id', $_POST ) || ! key_exists ( 'dealdate', $_POST ) || ! key_exists ( 'pay_name', $_POST ) || ! key_exists ( 'comment', $_POST ) || ! key_exists ( 'amount', $_POST ) || ! key_exists ( 'startdate', $_POST ) || ! key_exists ( 'enddate', $_POST ))
+		return $response->withStatus ( 404 );
+	$sql = "insert into managementfee (cu_id,dealdate,startdate,enddate,pay_name,amount,comment) values({$_POST['cu_id']}, '{$_POST['dealdate']}','{$_POST['startdate']}','{$_POST['enddate']}', '{$_POST['pay_name']}',{$_POST['amount']},'{$_POST['comment']}')";
+	$db = new DataBase ();
+	$affectedrow = $db->execute ( $sql );
+	return $response->getBody ()->write ( json_encode ( [ 
+			'status' => $affectedrow 
+	] ) );
+}
+
+/*
+ * 管理费用修改
+ * */
+function handle_managementfee_update($this,$request, $response, $args){
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'id', $_POST ) ||! key_exists ( 'cu_id', $_POST ) || ! key_exists ( 'dealdate', $_POST ) || ! key_exists ( 'pay_name', $_POST ) || ! key_exists ( 'comment', $_POST ) || ! key_exists ( 'amount', $_POST ) || ! key_exists ( 'startdate', $_POST ) || ! key_exists ( 'enddate', $_POST ))
+		return $response->withStatus ( 404 );
+	$sql = "update managementfee set cu_id ={$_POST['cu_id']} ,dealdate= '{$_POST['dealdate']}',startdate='{$_POST['startdate']}',enddate='{$_POST['enddate']}',pay_name='{$_POST['pay_name']}',amount={$_POST['amount']},comment='{$_POST['comment']}' where id={$_POST['id']}";
+	$db = new DataBase ();
+	$affectedrow = $db->execute ( $sql );
+	return $response->getBody ()->write ( json_encode ( [
+			'status' => $affectedrow,
+			'msg'=>$affectedrow==0?"信息未更改或id错误":"修改成功{$affectedrow}项"
+	] ) );
+}
+
+/*
+ * 管理费用删除
+ * */
+ 
+function handle_managementfee_delete($this,$request, $response, $args){
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'id', $_POST ) )
+		return $response->withStatus ( 404 );
+	$sql = "delete from managementfee where id={$_POST['id']}";
+	$db = new DataBase ();
+	$affectedrow = $db->execute ( $sql );
+	return $response->getBody ()->write ( json_encode ( [
+		'status' => $affectedrow,
+		'msg'=>$affectedrow==0?"id错误":"删除成功{$affectedrow}项"
+	] ) );
+}
+
+/*
+ * 管理费用搜索
+ * */
+function handle_managementfee_search($this,$request, $response, $args){
+	// get method
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' )=== FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	
+	$sql = " from  managementfee left join customer on customer.id = managementfee.cu_id left join tomb on tomb.customerid = customer.id ";
+	$hasarg = FALSE;
+	
+	//type
+	if(key_exists("type", $_GET) && key_exists("days", $_GET)){
+		switch ($_GET['type']){
+			case 1:
+				$sql .=((!$hasarg?" where ":" and ")." datediff(CURDATE(),managementfee.enddate) > 0");
+				$hasarg = True;
+				break;
+			case 2:
+				$sql .=((!$hasarg?" where ":" and ")." datediff(managementfee.enddate,CURDATE()) <= {$_GET['days']} and datediff(managementfee.enddate,CURDATE()) >0 ");
+				$hasarg = True;
+				break;
+			case 3:
+				$sql .=((!$hasarg?" where ":" and ")." datediff(managementfee.enddate,CURDATE()) <= {$_GET['days']}");
+				break;
+			default:
+				break;
+		}
+	}
+	
+	if(key_exists("zone_from", $_GET)){
+		$sql .=((!$hasarg?" where ":" and ")."{$_GET['zone_from']} <= zone ");
+		$hasarg = True;
+	}
+	if(key_exists("zone_to", $_GET)){
+		$sql .=((!$hasarg?" where ":" and ")."{$_GET['zone_to']} >= zone ");
+		$hasarg = True;
+	}
+	if(key_exists("row_from", $_GET)){
+		$sql .=((!$hasarg?" where ":" and ")."{$_GET['row_from']} <= row ");
+		$hasarg = True;
+	}
+	if(key_exists("row_to", $_GET)){
+		$sql .=((!$hasarg?" where ":" and ")."{$_GET['row_to']} >= row ");
+		$hasarg = True;
+	}
+	
+	
+	$sql .="order by zone,row asc";
+	
+	$db = new DataBase ();
+	
+	$sqlcount = "select count(distinct rid) as total ".$sql;
+	$total = $db->pdo->query($sqlcount)->fetchAll ( PDO::FETCH_ASSOC )[0]['total'];
+	$totalPage = ceil($total/100);
+	
+	$sql .= " group by rid";
+	if(key_exists('page', $_GET) && $_GET['page'] >=1){
+		$si = ($_GET['page']-1)*100;
+		$sql .= " limit {$si},100";
+	}
+	$sql = "select distinct rid,cu_name,phone,dealdate,amount,startdate,max(enddate) ".$sql;
+	
+	echo $sql;
+	$result = $db->pdo->query ( $sql );
+	$body = [];
+	if ($result != FALSE) {
+		$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+		foreach ( $result as $row ) {
+			$body[]=[
+					'rid'=>$row['rid'],
+					'cu_name'=>$row['cu_name'],
+					'phone'=>$row['phone'],
+					'dealdate'=>$row['dealdate'],
+					'amount'=>$row['amount'],
+					'startdate'=>$row['startdate'],
+					'enddate'=>$row['enddate'],
+					'totalPages' => $totalPage
+			];
+		}
+	}
+	$response->getBody()->write(json_encode($body));
+	
+}

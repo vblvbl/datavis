@@ -1,0 +1,45 @@
+<?php
+// Application middleware
+
+// e.g: $app->add(new \Slim\Csrf\Guard);
+
+
+$app->add(function ($request, $response, $next) {
+	foreach ($_GET as $key=>$value){
+		$banned = ["'",'where'];
+		foreach ($banned as $bannedSymbol){
+			if(strpos($value,$bannedSymbol) !== FALSE){
+				$response->getBody()->write(json_encode([
+						'msg'=>"参数{$key},含有非法字符:\"{$bannedSymbol}\",传入参数为\"{$value}\""
+						]));
+				return $response->withStatus(403);
+			}
+		}
+	}
+	return $next($request, $response);
+});
+/*
+ * authorize check
+ * */
+$app->add(function ($request, $response, $next) {
+	if($request->isPost() && $request->getUri()->getPath() == "/auth/login"){
+		return $next($request, $response);
+	}else{
+		if(key_exists('token', $_COOKIE)){
+			$token = $_COOKIE['token'];
+			$auth = new AuthObject($token);
+			$auth->delete_expire();
+			if($auth->userid != NULL){
+				// update auth
+				$auth->date = $_SERVER['REQUEST_TIME'];
+				$auth->create_or_update();
+				return $next($request, $response);
+			}else{
+				return $response->withStatus(401);
+			}
+		}else{
+			return $response->withStatus(401);
+		}
+	}
+});
+

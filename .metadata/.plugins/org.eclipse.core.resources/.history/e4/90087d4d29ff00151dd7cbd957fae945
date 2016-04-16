@@ -1,0 +1,613 @@
+<?php
+require_once __DIR__ . '/../Model/CustomerObject.php';
+function handle_customer_availableid($c, $request, $response, $args) {
+	// get_method
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	$today = date ( "Ymd", $_SERVER ['REQUEST_TIME'] );
+	$candidate = "{$today}001";
+	
+	$db = new DataBase ();
+	$sql = "select max(rid) from " . CustomerObject::table;
+	$result = $db->pdo->query ( $sql )->fetchAll ( PDO::FETCH_ASSOC );
+	if ($result !== FALSE && $result ['max(rid)'] != NULL) {
+		$candidate = ( string ) (( int ) $result ['rid'] + 1);
+	}
+	$response->getBody ()->write ( $candidate );
+	return $response;
+}
+function handle_customer_create($c, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	$today = date ( "Ymd", $_SERVER ['REQUEST_TIME'] );
+	$rid = "{$today}001";
+	
+	$db = new DataBase ();
+	$sql = "select max(rid) from " . CustomerObject::table;
+	$result = $db->pdo->query ( $sql )->fetchAll ( PDO::FETCH_ASSOC );
+	if ($result !== FALSE && $result [0] ['max(rid)'] != NULL) {
+		$rid = sprintf ( "%03d", ( int ) substr ( $result [0] ['max(rid)'], - 3 ) + 1 );
+		$rid = "{$today}{$rid}";
+	}
+	if (! key_exists ( 'cremation', $_POST ) ||! key_exists ( 'identity', $_POST ) ||! key_exists ( 'cu_name', $_POST ) || ! key_exists ( 'cu_org', $_POST ) || ! key_exists ( 'cu_address', $_POST ) || ! key_exists ( 'cu_reg_address', $_POST ) || ! key_exists ( 'phone', $_POST ) || ! key_exists ( 'comment', $_POST ))
+		return $response->withStatus ( 404 );
+	
+	$sql = "insert into customer (rid,cu_name,cu_org,cu_address,cu_reg_address,phone,comment, cremation,identity) values('{$rid}', '{$_POST ['cu_name']}','{$_POST ['cu_org']}','{$_POST ['cu_address']}','{$_POST ['cu_reg_address']}','{$_POST ['phone']}','{$_POST ['comment']}','{$_POST ['cremation']}','{$_POST ['identity']}')";
+	$affectedrow = $db->pdo->exec ( $sql );
+	echo $sql;
+	$body = [ 
+			'rid' => $rid,
+			'status' => $affectedrow === FALSE ? 0 : $affectedrow,
+			'msg' => $affectedrow === FALSE ? "创建用户失败，请重试" : "创建成功" 
+	];
+	$response->getBody ()->write ( json_encode ( $body ) );
+	return $response;
+}
+function handle_customer_delete($c, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'rid', $_POST ))
+		return $response->withStatus ( 404 );
+	
+	$rid = $_POST ['rid'];
+	
+	$deletecustomer = new CustomerObject ();
+	$deletecustomer->initialize_with_rid ( $rid );
+	if ($deletecustomer->id == NULL) {
+		return $response->withStatus ( 404 );
+	}
+	
+	// 删除预定订单
+	// 删除申购墓穴
+	$sql = "update tomb set dealprice=0, statuscode = 1, status='空置',customerid=NULL,requestdate=NULL,death_name=NULL where customerid = {$deletecustomer->id}";
+	$deletecustomer->execute ( $sql );
+	
+	// 删除购置费用
+	// 删除管理费用
+	// 暂时不做这个处理。
+	// delete customer
+	$sql = "update " . CustomerObject::table . " set status=0 where rid = {$rid}";
+	$deletecustomer->execute ( $sql );
+	
+	$response->getBody ()->write ( json_encode ( [ 
+			'status' => 1 
+	] ) );
+	return $response;
+}
+function handle_customer_search($c, $request, $response, $args) {
+	// get method
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	$sql = "select distinct rid, count(rid) as total from customer left join tomb on customer.id = tomb.customerid ";
+	$checklist = [ 
+			'rid',
+			'phone',
+			'cu_name',
+			'death_name',
+			'cu_reg_address'
+	];
+	$hasarg = FALSE;
+	foreach ( $checklist as $arg ) {
+		if (key_exists ( $arg, $_GET )) {
+			$sql .= ((! $hasarg ? " where " : " and ") . "{$arg} like '%{$_GET[$arg]}%'");
+			$hasarg = True;
+		}
+	}
+	if (key_exists ( "zone_from", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['zone_from']} <= zone ");
+		$hasarg = True;
+	}
+	if (key_exists ( "zone_to", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['zone_to']} >= zone ");
+		$hasarg = True;
+	}
+	if (key_exists ( "row_from", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['row_from']} <= row ");
+		$hasarg = True;
+	}
+	if (key_exists ( "row_to", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['row_to']} >= row ");
+		$hasarg = True;
+	}
+	
+	if (key_exists ( "date_from", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "'{$_GET['date_from']}' <= requestdate ");
+		$hasarg = True;
+	}
+	if (key_exists ( "date_to", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "'{$_GET['date_to']}' >= requestdate ");
+		$hasarg = True;
+	}
+	
+	
+	$sql .= ((! $hasarg ? " where " : " and ") . " customer.status = 1 ");
+	$hasarg = True;
+	
+	if (key_exists ( "orderby", $_GET )) {
+		if ($_GET ['orderby'] == 'position') {
+			$sql .= "order by zone,row asc";
+		} else if ($_GET ['orderby'] == 'rid') {
+			$sql .= "order by rid asc";
+		}
+	}
+	
+	if(key_exists('page', $_GET)){
+		$si = ($_GET['page']-1)*100;
+		$sql .= " limit {$si},100";
+	}
+	
+	echo $sql;
+	$db = new DataBase ();
+	$result = $db->pdo->query ( $sql );
+	$body = new Array();
+	if ($result != FALSE) {
+		$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+		foreach ( $result as $rid ) {
+			/*
+			 * start for
+			 */
+			
+			$customer = new CustomerObject ( $rid ['rid'] );
+			$totalPage = ceil($rid['total']/100);
+			/*
+			 * 查询申购情况
+			 */
+			$order = [ ];
+			$sql = "select * from tomb join tombtype on tomb.typecode = tombtype.id where customerid = {$customer->id} and statuscode <> 4";
+			$result = $db->pdo->query ( $sql );
+			if ($result != FALSE) {
+				$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+				foreach ( $result as $row ) {
+					$order [] = [ 
+							'zone' => $row ['zone'],
+							'row' => $row ['row'],
+							'col' => $row ['col'],
+							'tombtype' => $row ['tombtype'],
+							'dealprice' => $row ['dealprice'],
+							'death_name' => $row ['death_name'] 
+					];
+				}
+			}
+			
+			/*
+			 * 查询预定
+			 */
+			$db = new DataBase ();
+			$book = [ ];
+			$sql = "select * from tomb join tombtype on tomb.typecode = tombtype.id where customerid = {$customer->id} and statuscode = 4";
+			$result = $db->pdo->query ( $sql );
+			if ($result != FALSE) {
+				$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+				foreach ( $result as $row ) {
+					$book [] = [ 
+							'zone' => $row ['zone'],
+							'row' => $row ['row'],
+							'col' => $row ['col'],
+							'tombtype' => $row ['tombtype'],
+							'validdate' => $row ['validdate'],
+							'death_name' => $row ['death_name'] 
+					];
+				}
+			}
+			
+			/*
+			 * 购置费用
+			 */
+			$orderfee = [ ];
+			$sql = "select * from orderfee where cu_id = {$customer->id}";
+			$result = $db->pdo->query ( $sql );
+			if ($result != FALSE) {
+				$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+				foreach ( $result as $row ) {
+					$orderfee [] = [ 
+							'id' => $row ['id'],
+							'date' => $row ['date'],
+							'pay_name' => $row ['pay_name'],
+							'amount' => $row ['amount'],
+							'comment' => $row ['comment'] 
+					];
+				}
+			}
+			
+			/*
+			 * 管理费用
+			 */
+			$managementfee = [ ];
+			$sql = "select * from managementfee where cu_id = {$customer->id}";
+			$result = $db->pdo->query ( $sql );
+			if ($result != FALSE) {
+				$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+				foreach ( $result as $row ) {
+					$managementfee [] = [ 
+							'id' => $row ['id'],
+							'dealdate' => $row ['dealdate'],
+							'startdate' => $row ['startdate'],
+							'enddate' => $row ['enddate'],
+							'amount' => $row ['amount'],
+							'comment' => $row ['comment'],
+							'pay_name' => $row ['pay_name'] 
+					];
+				}
+			}
+			
+			$body [] = [ 
+					'cu_id' => $customer->id,
+					'rid' => $customer->rid,
+					'cu_name' => $customer->cu_name,
+					'cu_org' => $customer->cu_org,
+					'cu_address' => $customer->cu_address,
+					'cu_reg_address' => $customer->cu_reg_address,
+					'phone' => $customer->phone,
+					'comment' => $customer->comment,
+					'status' => $customer->status,
+					'identity'=>$customer->identity,
+					'cremation'=>$customer->cremation,
+					'order' => $order,
+					'book' => $book,
+					'orderfee' => $orderfee,
+					'managementfee' => $managementfee,
+					'totalPages'=>$totalPage
+			];
+			/*
+			 * end for
+			 */
+		}
+	}
+	$response->getBody ()->write ( json_encode ( $body ) );
+	// 组装sql
+	/*
+	 * 待添加
+	 */
+}
+function handle_customer_info($c, $request, $response, $args) {
+	// get method
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'rid', $_GET ))
+		return $response->withStatus ( 404 );
+	
+	$customer = new CustomerObject ( $_GET ['rid'] );
+	if ($customer->id == NULL) {
+		$response->getBody ()->write ( json_encode ( [ 
+				'status' => 0,
+				'msg' => '用户不存在，检查rid' 
+		] ) );
+		return $response->withStatus ( 404 );
+	}
+	/*
+	 * 查询申购情况
+	 */
+	$db = new DataBase ();
+	$order = [ ];
+	$sql = "select * from tomb join tombtype on tomb.typecode = tombtype.id where customerid = {$customer->id} and statuscode <> 4";
+	$result = $db->pdo->query ( $sql );
+	if ($result != FALSE) {
+		$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+		foreach ( $result as $row ) {
+			$folder = __DIR__ . "/../../tombfiles/" . $row ['zone'] . "-" . $row ['row'] . "-" . $row ['col'];
+			$dirfiles = [ ];
+			if (is_dir ( $folder ) && $files = scandir ( $folder )) {
+				foreach ( $files as $file ) {
+					if ($file == '.' || $file == '..') {
+						continue;
+					}
+					$dirfiles [] = [ 
+							'name' => $file,
+							'path' => urlencode ( "/tombfiles/" . $row ['zone'] . "-" . $row ['row'] . "-" . $row ['col'] . "/{$file}" ) 
+					];
+				}
+			} else {
+				// no such dir or no uploadfiles
+			}
+			$order [] = [ 
+					'zone' => $row ['zone'],
+					'row' => $row ['row'],
+					'col' => $row ['col'],
+					'tombtype' => $row ['tombtype'],
+					'dealprice' => $row ['dealprice'],
+					'death_name' => $row ['death_name'],
+					'originalprice' => $row ['originalprice'],
+					'publicprice' => $row ['publicprice'],
+					'status' => $row ['status'],
+					'comment' => $row ['comment'],
+					'requestdate' => $row ['requestdate'],
+					'burystatus'=>$row['burystatus'],
+					'burydate'=>$row['burydate'],
+					'files' => $dirfiles 
+			];
+		}
+	}
+	
+	/*
+	 * 查询预定
+	 */
+	$db = new DataBase ();
+	$book = [ ];
+	$sql = "select * from tomb join tombtype on tomb.typecode = tombtype.id where customerid = {$customer->id} and statuscode = 4";
+	$result = $db->pdo->query ( $sql );
+	if ($result != FALSE) {
+		$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+		foreach ( $result as $row ) {
+			$folder = __DIR__ . "/../../tombfiles/" . $row ['zone'] . "-" . $row ['row'] . "-" . $row ['col'];
+			$dirfiles = [ ];
+			if (is_dir ( $folder ) && $files = scandir ( $folder )) {
+				foreach ( $files as $file ) {
+					if ($file == '.' || $file == '..') {
+						continue;
+					}
+					$dirfiles [] = [ 
+							'name' => $file,
+							'path' => urlencode ( "/tombfiles/" . $row ['zone'] . "-" . $row ['row'] . "-" . $row ['col'] . "/{$file}" ) 
+					];
+				}
+			} else {
+				// no such dir or no uploadfiles
+			}
+			$book [] = [ 
+					'zone' => $row ['zone'],
+					'row' => $row ['row'],
+					'col' => $row ['col'],
+					'tombtype' => $row ['tombtype'],
+					'validdate' => $row ['validdate'],
+					'death_name' => $row ['death_name'],
+					'originalprice' => $row ['originalprice'],
+					'publicprice' => $row ['publicprice'],
+					'status' => $row ['status'],
+					'comment' => $row ['comment'],
+					'requestdate' => $row ['requestdate'],
+					'files' => $dirfiles 
+			];
+		}
+	}
+	
+	/*
+	 * 购置费用
+	 */
+	$orderfee = [ ];
+	$sql = "select * from orderfee where cu_id = {$customer->id}";
+	$result = $db->pdo->query ( $sql );
+	if ($result != FALSE) {
+		$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+		foreach ( $result as $row ) {
+			$orderfee [] = [ 
+					'id' => $row ['id'],
+					'date' => $row ['date'],
+					'pay_name' => $row ['pay_name'],
+					'amount' => $row ['amount'],
+					'comment' => $row ['comment'] 
+			];
+		}
+	}
+	
+	/*
+	 * 管理费用
+	 */
+	$managementfee = [ ];
+	$sql = "select * from managementfee where cu_id = {$customer->id}";
+	$result = $db->pdo->query ( $sql );
+	if ($result != FALSE) {
+		$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+		foreach ( $result as $row ) {
+			$managementfee [] = [ 
+					'id' => $row ['id'],
+					'dealdate' => $row ['dealdate'],
+					'startdate' => $row ['startdate'],
+					'enddate' => $row ['enddate'],
+					'amount' => $row ['amount'],
+					'comment' => $row ['comment'],
+					'pay_name' => $row ['pay_name'] 
+			];
+		}
+	}
+	
+	$body = [ 
+			'cu_id' => $customer->id,
+			'rid' => $customer->rid,
+			'cu_name' => $customer->cu_name,
+			'cu_org' => $customer->cu_org,
+			'cu_address' => $customer->cu_address,
+			'cu_reg_address' => $customer->cu_reg_address,
+			'phone' => $customer->phone,
+			'comment' => $customer->comment,
+			'status' => $customer->status,
+			'identity'=>$customer->identity,
+			'cremation'=>$customer->cremation,
+			'order' => $order,
+			'book' => $book,
+			'orderfee' => $orderfee,
+			'managementfee' => $managementfee 
+	];
+	// 待添加申购信息等。
+	// TO DO
+	
+	$response->getBody ()->write ( json_encode ( $body ) );
+	return $response;
+}
+function handle_customer_tocsv($c, $request, $response, $args) {
+	// get method
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'type', $_GET ) || ($_GET ['type'] == 'simple' && $_GET ['type'] == 'detail')) {
+		return $response->withStatus ( 404 );
+	}
+	
+	$sql = "select distinct rid,cu_name,phone from customer left join tomb on customer.id = tomb.customerid ";
+	$checklist = [ 
+			'rid',
+			'phone',
+			'cu_name',
+			'death_name' 
+	];
+	$hasarg = FALSE;
+	foreach ( $checklist as $arg ) {
+		if (key_exists ( $arg, $_GET )) {
+			$sql .= ((! $hasarg ? " where " : " and ") . "{$arg} like '%{$_GET[$arg]}%'");
+			$hasarg = True;
+		}
+	}
+	if (key_exists ( "zone_from", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['zone_from']} <= zone ");
+		$hasarg = True;
+	}
+	if (key_exists ( "zone_to", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['zone_to']} >= zone ");
+		$hasarg = True;
+	}
+	if (key_exists ( "row_from", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['row_from']} <= row ");
+		$hasarg = True;
+	}
+	if (key_exists ( "row_to", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['row_to']} >= row ");
+		$hasarg = True;
+	}
+	
+	$sql .= ((! $hasarg ? " where " : " and ") . " customer.status = 1 ");
+	$hasarg = True;
+	
+	if (key_exists ( "orderby", $_GET )) {
+		if ($_GET ['orderby'] == 'position') {
+			$sql .= "order by zone,row asc";
+		} else if ($_GET ['orderby'] == 'rid') {
+			$sql .= "order by rid asc";
+		}
+	}
+	$db = new DataBase ();
+	$ridresult = $db->pdo->query ( $sql );
+	$body = [ ];
+	if ($ridresult != FALSE) {
+		$ridresult = $ridresult->fetchAll ( PDO::FETCH_ASSOC );
+		foreach ( $ridresult as $rid ) {
+			$cuinfo['申请编号'] = $rid['rid'];
+			$cuinfo['客户姓名'] = $rid['cu_name'];
+			$cuinfo['联系电话'] = $rid['phone'];
+			$customer = new CustomerObject ( $rid ['rid'] );
+			/*
+			 * 查询申购情况
+			 */
+			$order = "";
+			$sql = "select * from tomb join tombtype on tomb.typecode = tombtype.id where customerid = {$customer->id} and statuscode <> 4";
+			$result = $db->pdo->query ( $sql );
+			if ($result != FALSE) {
+				$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+				foreach ( $result as $row ) {
+					$order .= "{$row ['zone']}区{$row ['row']}行{$row ['col']}列，类型：{$row ['tombtype']}，成交价：{$row ['dealprice']}，逝者姓名：{$row ['death_name']}|";
+				}
+			}
+			
+			/*
+			 * 查询预定
+			 */
+			$book = "";
+			$sql = "select * from tomb join tombtype on tomb.typecode = tombtype.id where customerid = {$customer->id} and statuscode = 4";
+			$result = $db->pdo->query ( $sql );
+			if ($result != FALSE) {
+				$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+				foreach ( $result as $row ) {
+					$book .= "{$row ['zone']}区{$row ['row']}行{$row ['col']}列，类型：{$row ['tombtype']}，有效期：{$row ['validdate']}，逝者姓名：{$row ['death_name']}|";
+				}
+			}
+			
+			/*
+			 * 购置费用
+			 */
+			$orderfee = "";
+			$sql = "select * from orderfee where cu_id = {$customer->id}";
+			$result = $db->pdo->query ( $sql );
+			if ($result != FALSE) {
+				$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+				foreach ( $result as $row ) {
+					$orderfee .= "日期：{$row ['date']}，付款人：{$row ['pay_name']}，金额：{$row ['amount']}，备注：{$row ['comment']}|";
+				}
+			}
+			/*
+			 * 管理费用
+			 */
+			$managementfee = "";
+			$sql = "select * from managementfee where cu_id = {$customer->id}";
+			$result = $db->pdo->query ( $sql );
+			if ($result != FALSE) {
+				$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+				foreach ( $result as $row ) {
+					$managementfee .= "缴款日期：{$row ['dealdate']}，开始日期：{$row ['startdate']}，截止日期：{$row ['enddate']}，金额：{$row ['amount']}，付款人：{$row ['pay_name']}，备注：{$row ['comment']}|";
+				}
+			}
+			$cuinfo ['新购情况'] = $order;
+			$cuinfo ['预定情况'] = $book;
+			if ($_GET['type'] == 'detail'){
+				$cuinfo ['新购付费'] = $orderfee;
+				$cuinfo ['管理费管理'] = $managementfee;
+			}
+			$body[] = $cuinfo;
+		}
+		
+	}
+	Header ( "Content-type: application/octet-stream" );
+	Header ( "Accept-Ranges: bytes" );
+	// Header ( "Accept-Length: " . filesize ( $path ) );
+	Header ( "Content-Disposition: attachment; filename=导出客户列表.csv" );
+	$response->getBody ()->write ( chr ( 239 ) . chr ( 187 ) . chr ( 191 ) );
+	if (count ( $body ) > 0) {
+		foreach ( $body [0] as $key => $value ) {
+			$response->getBody ()->write ( $key . "," );
+		}
+		$response->getBody ()->write ( "\n" );
+	}
+	
+	foreach ( $body as $line ) {
+		foreach ( $line as $key => $value ) {
+			$response->getBody ()->write ( $value . "," );
+		}
+		$response->getBody ()->write ( "\n" );
+	}
+	return $response;
+}
+function handle_customer_update($c, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	$db = new DataBase ();
+	if (! key_exists ( 'rid', $_POST ) || ! key_exists ( 'cu_name', $_POST ) || ! key_exists ( 'cu_org', $_POST ) || ! key_exists ( 'cu_address', $_POST ) || ! key_exists ( 'cu_reg_address', $_POST ) || ! key_exists ( 'phone', $_POST ) || ! key_exists ( 'comment', $_POST ))
+		return $response->withStatus ( 404 );
+	
+	$sql = "update customer set cu_name='{$_POST ['cu_name']}',cu_org='{$_POST ['cu_org']}',cu_address='{$_POST ['cu_address']}',cu_reg_address='{$_POST ['cu_reg_address']}',phone='{$_POST ['phone']}',comment='{$_POST ['comment']}'  where rid = '{$_POST ['rid']}'";
+	$affectedrow = $db->pdo->exec ( $sql );
+	$body = [ 
+			'status' => $affectedrow === FALSE ? 0 : $affectedrow,
+			'msg' => $affectedrow === FALSE ? "信息未改变或rid不存在" : "修改成功" 
+	];
+	$response->getBody ()->write ( json_encode ( $body ) );
+	return $response;
+}

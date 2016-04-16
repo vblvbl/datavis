@@ -1,0 +1,830 @@
+<?php
+require_once __DIR__ . '/../Model/TombObject.php';
+// 添加区域
+function handle_tomb_addzone($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	try {
+		if (! key_exists ( 'row', $_POST ) || ! key_exists ( 'firstrow', $_POST ) || ! key_exists ( 'increment', $_POST ))
+			return $response->withStatus ( 404 );
+		$zoneid = 1;
+		$db = new DataBase ();
+		$sql = "select max(zone) as mzone from tomb";
+		$result = $db->pdo->query ( $sql )->fetchAll ( PDO::FETCH_ASSOC );
+		if ($result !== FALSE && $result [0] ['mzone'] != NULL) {
+			$zoneid = $result[0] ['mzone'] + 1;
+		}
+		$db->pdo->beginTransaction ();
+		$firstrow = $_POST ['firstrow'];
+		for($i = 1; $i <= $_POST ['row']; $i ++) {
+			for($j = 1; $j <= $firstrow; $j ++) {
+				$sql = "insert into tomb (zone, row, col, position) values ({$zoneid},{$i},{$j},{$j})";
+				$db->pdo->exec ( $sql );
+			}
+			$firstrow += $_POST ['increment'];
+		}
+		$db->pdo->commit ();
+		
+		$response->getBody ()->write ( json_encode ( [ 
+				'status' => 1 
+		] ) );
+		return $response;
+	} catch ( Exception $e ) {
+		$response->getBody ()->write ( json_encode ( [ 
+				'status' => 0 
+		] ) );
+		return $response;
+	}
+}
+
+/*
+ * 删除区域
+ */
+function handle_tomb_deletezone($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	$zone = $_POST ['zone'];
+	$db = new DataBase ();
+	$sql = "delete from tomb where zone = {$zone}";
+	
+	$affectedrow = $db->execute ( $sql );
+	
+	$response->getBody ()->write ( json_encode ( [ 
+			'status' => $affectedrow 
+	] ) );
+}
+
+/*
+ *
+ */
+function handle_tomb_updaterow($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	if (! key_exists ( 'newrow', $_POST ) || ! key_exists ( 'zone', $_POST ) || ! key_exists ( 'firstrow', $_POST ) || ! key_exists ( 'increment', $_POST ))
+		return $response->withStatus ( 404 );
+	try {
+		$db = new DataBase ();
+		$sql = "select max(row) from tomb where zone = {$_POST['zone']}";
+		$result = $db->pdo->query ( $sql )->fetchAll ( PDO::FETCH_ASSOC );
+		$currow = 0;
+		if ($result !== FALSE && $result [0] ['max(row)'] != NULL) {
+			$currow = $result [0] ['max(row)'];
+		}
+		
+		if ($_POST ['newrow'] > $currow) {
+			// 后面添加行
+			$db->pdo->beginTransaction ();
+			$firstrow = $_POST ['firstrow'];
+			for($i = $currow + 1; $i <= $_POST ['newrow']; $i ++) {
+				for($j = 1; $j <= $firstrow; $j ++) {
+					$sql = "insert into tomb (zone, row, col, position) values ({$_POST['zone']},{$i},{$j},{$j})";
+					$db->pdo->exec ( $sql );
+				}
+				$firstrow += $_POST ['increment'];
+			}
+			$db->pdo->commit ();
+		} elseif ($_POST ['newrow'] < $currow) {
+			// 删除行
+			$sql = "delete from tomb where row > {$_POST['newrow']}";
+			$db->pdo->exec ( $sql );
+		} else {
+			// 不改动
+		}
+		$status = 1;
+	} catch ( Exception $e ) {
+		$status = 0;
+	} finally {
+		$response->getBody ()->write ( json_encode ( [ 
+				'status' => $status 
+		] ) );
+		return $response;
+	}
+}
+
+/*
+ * 更改列数量
+ */
+function handle_tomb_updatecol($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	if (! key_exists ( 'row', $_POST ) || ! key_exists ( 'zone', $_POST ) || ! key_exists ( 'newcol', $_POST ))
+		return $response->withStatus ( 404 );
+	try {
+		$db = new DataBase ();
+		$sql = "select max(col) from tomb where zone = {$_POST['zone']} and row = {$_POST['row']}";
+		$result = $db->pdo->query ( $sql )->fetchAll ( PDO::FETCH_ASSOC );
+		$curcol = 0;
+		if ($result !== FALSE && $result [0] ['max(col)'] != NULL) {
+			$curcol = $result [0] ['max(col)'];
+		}
+		
+		if ($_POST ['newcol'] > $curcol) {
+			// 后面添加列
+			$db->pdo->beginTransaction ();
+			for($j = 1; $j <= $_POST ['newcol']; $j ++) {
+				$sql = "insert into tomb (zone, row, col, position) values ({$_POST['zone']},{$_POST['row']},{$j},{$j})";
+				$db->pdo->exec ( $sql );
+			}
+			$db->pdo->commit ();
+		} elseif ($_POST ['newcol'] < $curcol) {
+			// 删除行
+			$sql = "delete from tomb where zone = {$_POST['zone']} and row = {$_POST['row']} and col > {$_POST['newcol']}";
+			$db->pdo->exec ( $sql );
+		} else {
+			// 不改动
+		}
+		$status = 1;
+	} catch ( Exception $e ) {
+		$status = 0;
+	} finally {
+		$response->getBody ()->write ( json_encode ( [ 
+				'status' => $status 
+		] ) );
+		return $response;
+	}
+}
+
+/*
+ * 请求一个区域内所有墓穴信息
+ */
+function handle_tomb_zoneinfo($this, $request, $response, $args) {
+	// get 方法
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'zone', $_GET ))
+		return $response->withStatus ( 404 );
+	
+	$zone = $_GET ['zone'];
+	$sql = "select count(*) as total, count(if(statuscode=1,1,NULL)) as vacancy, count(if(statuscode<>1,1,NULL)) as occupied from tomb where zone={$zone}";
+	$db = new DataBase ();
+	$result = $db->pdo->query ( $sql );
+	if ($result === FALSE) { // no information
+		$response->getBody ()->write ( json_encode ( [ 
+				'total' => 0,
+				'vacancy' => 0,
+				'occupied' => 0,
+				'tombs' => [ ] 
+		] ) );
+	} else {
+		$result = $result->fetchAll ( PDO::FETCH_ASSOC ) [0];
+		// 获取单个tombinfo
+		$tombs = [ ];
+		$tombsql = "select zone, col, row from tomb where zone={$zone}";
+		$tombresult = $db->pdo->query ( $tombsql )->fetchAll ( PDO::FETCH_ASSOC );
+		foreach ( $tombresult as $tomb ) {
+			$tombObject = new TombObject ( $tomb ['zone'], $tomb ['row'], $tomb ['col'] );
+			$tombs [] = $tombObject->dump ();
+		}
+		
+		$response->getBody ()->write ( json_encode ( [ 
+				'total' => $result ['total'],
+				'vacancy' => $result ['vacancy'],
+				'occupied' => $result ['occupied'],
+				'tombs' => $tombs 
+		] ) );
+	}
+	return $response;
+}
+
+/*
+ * 请求单个墓穴信息
+ */
+function handle_tomb_tombinfo($this, $request, $response, $args) {
+	// get方法
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	if (! key_exists ( 'row', $_GET ) || ! key_exists ( 'zone', $_GET ) || ! key_exists ( 'col', $_GET ))
+		return $response->withStatus ( 404 );
+	
+	$tomb = new TombObject ( $_GET ['zone'], $_GET ['row'], $_GET ['col'] );
+	if ($tomb->id != NULL) {
+		$sql = "select distinct tombtype from tombtype where id = {$tomb->typecode}";
+		$tombinfo = $tomb->dump () ;
+		$tombinfo['tombtype'] = $tomb->pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC)[0]['tombtype'];
+		
+		$folder = __DIR__ . "/../../tombfiles/" . $_GET ['zone'] . "-" . $_GET ['row'] . "-" . $_GET ['col'];
+		$tombfiles = [ ];
+		if (is_dir($folder) && $files = scandir ( $folder )) {
+			foreach ( $files as $file ) {
+				if ($file == '.' || $file == '..') {
+					continue;
+				}
+				$tombfiles [] = [
+						'name'=>$file,
+						'path'=>urlencode ( "/tombfiles/" . $_GET ['zone'] . "-" . $_GET ['row'] . "-" . $_GET ['col'] . "/{$file}" )
+				];
+			}
+		}
+		$tombinfo['files'] = $tombfiles;
+		$response->getBody ()->write ( json_encode ( [ 
+				'status' => '1',
+				'data' => $tombinfo
+		] ) );
+	} else {
+		$response->getBody ()->write ( json_encode ( [ 
+				'status' => '0',
+				'data' => "" 
+		] ) );
+	}
+	return $response;
+}
+
+/*
+ * 列出当前所有区
+ */
+function handle_tomb_zonelist($this, $request, $response, $args) {
+	// get 方法
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	$sql = "select distinct zone from tomb";
+	$db = new DataBase ();
+	$result = $db->pdo->query ( $sql );
+	if ($result === FALSE) { // no information
+		$response->getBody ()->write ( json_encode ( [ ] ) );
+	} else {
+		$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+		$body = [ ];
+		foreach ( $result as $row ) {
+			$body [] = $row ['zone'];
+		}
+		$response->getBody ()->write ( json_encode ( $body ) );
+	}
+	return $response;
+}
+
+/*
+ * 列出当前所有区域的使用情况
+ */
+function handle_tomb_summary($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	$sql = "select distinct zone from tomb";
+	$db = new DataBase ();
+	$result = $db->pdo->query ( $sql );
+	if ($result === FALSE) { // no information
+		$response->getBody ()->write ( json_encode ( [ ] ) );
+	} else {
+		$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+		$body = [ ];
+		$tombs = array (
+				array (
+						array () 
+				) 
+		);
+		
+		foreach ( $result as $row ) {
+			$zone = $row ['zone'];
+			$sql = "select count(*) as total, count(if(statuscode=1,1,NULL)) as vacancy, count(if(statuscode<>1,1,NULL)) as occupied from tomb where zone={$zone}";
+			$result = $db->pdo->query ( $sql );
+			$result = $result->fetchAll ( PDO::FETCH_ASSOC ) [0];
+			
+			$tombsql = "select zone, col, row , status from tomb where zone={$zone}";
+			$tombresult = $db->pdo->query ( $tombsql )->fetchAll ( PDO::FETCH_ASSOC );
+			foreach ( $tombresult as $tomb ) {
+				$tombs [$tomb ['zone']] [$tomb ['row']] [$tomb ['col']] = $tomb ['status'];
+			}
+			
+			/*
+			 * 处理行信息
+			 */
+			$rows = [ ];
+			$sql = "select distinct row from tomb where zone = {$zone}";
+			$rowresults = $db->pdo->query ( $sql );
+			foreach ( $rowresults as $rowresult ) {
+				$sql = "select distinct col from tomb where zone = {$zone} and row = {$rowresult['row']}";
+				$colresults = $db->pdo->query ( $sql );
+				$cols = [ ];
+				foreach ( $colresults as $colresult ) {
+					$cols [] = [ 
+							'colid' => $colresult ['col'],
+							'status' => $tombs [$zone] [$rowresult ['row']] [$colresult ['col']] 
+					];
+				}
+				$rows [] = [ 
+						'rowid' => $rowresult ['row'],
+						'cols' => $cols 
+				];
+			}
+			$body [] = [ 
+					'zone' => $zone,
+					'total' => $result ['total'],
+					'vacancy' => $result ['vacancy'],
+					'occupied' => $result ['occupied'],
+					'rows' => $rows 
+			];
+		}
+		$response->getBody ()->write ( json_encode ( $body ) );
+	}
+}
+/*
+ * 上传墓位文件
+ */
+function handle_tomb_uploadfile($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'row', $_POST ) || ! key_exists ( 'zone', $_POST ) || ! key_exists ( 'col', $_POST ))
+		return $response->withStatus ( 404 );
+	$folder = __DIR__ . "/../../tombfiles/" . $_POST ['zone'] . "-" . $_POST ['row'] . "-" . $_POST ['col'];
+	$success = 0;
+	try {
+		if (! is_dir ( $folder )) {
+			mkdir ( $folder );
+		}
+		foreach ( $_FILES as $file ) {
+			$success ++;
+			$now = date ( 'Ymd-g:i:s' );
+			if (file_exists ( $folder . "/{$now}-{$file['name']}" )) {
+				continue;
+			}
+			move_uploaded_file ( $file ['tmp_name'], $folder . "/{$now}-{$file['name']}" );
+		}
+	} catch ( Exception $e ) {
+	}
+	$response->getBody ()->write ( json_encode ( [ 
+			'success' => $success 
+	] ) );
+	return $response;
+}
+
+/*
+ * 墓位信息修改
+ * */
+function handle_tomb_update($this,$request, $response, $args){
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	if (! key_exists ( 'typecode', $_POST ) || ! key_exists ( 'statuscode', $_POST ) || ! key_exists ( 'publicprice', $_POST )
+			|| ! key_exists ( 'originalprice', $_POST )|| ! key_exists ( 'dealprice', $_POST )|| ! key_exists ( 'comment', $_POST )
+			|| ! key_exists ( 'zone', $_POST )|| ! key_exists ( 'row', $_POST )|| ! key_exists ( 'col', $_POST )|| ! key_exists ( 'death_name', $_POST ))
+		return $response->withStatus ( 404 );
+	
+	switch ($_POST['statuscode']){
+		case 1:$status = "空置";break;
+		case 2:$status = "已申请";break;
+		case 3:$status = "已建碑";break;
+		case 4:$status = "已预定";break;
+	}
+	$sql = "update tomb set death_name='{$_POST['death_name']}',typecode = {$_POST['typecode']}, statuscode = {$_POST['statuscode']}, status='{$status}',publicprice={$_POST['publicprice']},originalprice={$_POST['originalprice']},dealprice={$_POST['dealprice']},comment='{$_POST['comment']}' where zone={$_POST['zone']} and row={$_POST['row']} and col={$_POST['col']}";
+	$db = new DataBase();
+	$affectedrow = $db->execute ( $sql );
+	return $response->getBody ()->write ( json_encode ( [ 
+			'status' => $affectedrow,
+			'msg'=>$affectedrow == 0?"修改失败，信息未改变或区行列信息错误":"修改成功"
+	] ) );
+}
+/*
+ * 列出墓位文件
+ */
+function handle_tomb_listfile($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	if (! key_exists ( 'row', $_GET ) || ! key_exists ( 'zone', $_GET ) || ! key_exists ( 'col', $_GET ))
+		return $response->withStatus ( 404 );
+	
+	$folder = __DIR__ . "/../../tombfiles/" . $_GET ['zone'] . "-" . $_GET ['row'] . "-" . $_GET ['col'];
+	$body = [ ];
+	if (is_dir($folder) && $files = scandir ( $folder )) {
+		foreach ( $files as $file ) {
+			if ($file == '.' || $file == '..') {
+				continue;
+			}
+			$body [] = urlencode ( "/tombfiles/" . $_GET ['zone'] . "-" . $_GET ['row'] . "-" . $_GET ['col'] . "/{$file}" );
+		}
+	} else {
+		// no such dir or no uploadfiles
+	}
+	$response->getBody ()->write ( json_encode ( $body, JSON_UNESCAPED_SLASHES ) );
+	return $response;
+}
+
+/*
+ * 文件下载请求
+ */
+function handle_tombfiles($this, $request, $response, $args) {
+	// get 方法
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	$path = urldecode ( $_GET ['path'] );
+	$path = __DIR__ . "/../..{$path}";
+	$filename = pathinfo ( $path, PATHINFO_FILENAME );
+	$ext = pathinfo ( $path, PATHINFO_EXTENSION );
+	if (file_exists ( $path )) {
+		$file = fopen ( $path, "r" );
+		Header ( "Content-type: application/octet-stream" );
+		Header ( "Accept-Ranges: bytes" );
+		Header ( "Accept-Length: " . filesize ( $path ) );
+		Header ( "Content-Disposition: attachment; filename=" . $filename . "." . $ext );
+		$response->getBody ()->write ( fread ( $file, filesize ( $path ) ) );
+		fclose ( $file );
+	} else {
+		return $response->withStatus ( 404 );
+	}
+}
+
+/*
+ * 删除墓位文件
+ */
+function handle_tomb_deletefile($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	if (! key_exists ( 'fullpath', $_POST ))
+		return $response->withStatus ( 404 );
+	
+	$path = urldecode ( $_POST ['fullpath'] );
+	$path = __DIR__ . "/../..{$path}";
+	$filename = pathinfo ( $path, PATHINFO_FILENAME );
+	if (file_exists ( $path )) {
+		unlink ( $path );
+		return $response->getBody ()->write ( json_encode ( [ 
+				'status' => 1 
+		] ) );
+	} else {
+		return $response->withStatus ( 404 );
+	}
+}
+
+/*
+ * 添加墓穴类型
+ */
+function handle_tomb_addtombtype($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'tombtype', $_POST ))
+		return $response->withStatus ( 404 );
+	$sql = "insert into tombtype (tombtype) values ('{$_POST['tombtype']}')";
+	$db = new DataBase ();
+	$affectedrow = $db->execute ( $sql );
+	return $response->getBody ()->write ( json_encode ( [ 
+			'status' => $affectedrow 
+	] ) );
+}
+
+/*
+ * 删除墓穴类型
+ */
+function handle_tomb_deletetombtype($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'tombtype', $_POST ))
+		return $response->withStatus ( 404 );
+	$sql = "delete from tombtype where tombtype = '{$_POST['tombtype']}'";
+	$db = new DataBase ();
+	$affectedrow = $db->execute ( $sql );
+	return $response->getBody ()->write ( json_encode ( [ 
+			'status' => $affectedrow 
+	] ) );
+}
+
+/*
+ * 修改墓穴类型
+ */
+function handle_tomb_updatetombtype($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'oritombtype', $_POST ) || ! key_exists ( 'newtombtype', $_POST ))
+		return $response->withStatus ( 404 );
+	$sql = "update tombtype set tombtype='{$_POST['newtombtype']}' where tombtype = '{$_POST['oritombtype']}'";
+	$db = new DataBase ();
+	$affectedrow = $db->execute ( $sql );
+	return $response->getBody ()->write ( json_encode ( [ 
+			'status' => $affectedrow 
+	] ) );
+}
+
+/*
+ * 列出所有墓穴类型
+ */
+function handle_tomb_listtombtype($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	$sql = "select * from tombtype";
+	$db = new DataBase ();
+	$result = $db->pdo->query ( $sql );
+	$body = [ ];
+	if ($result != FALSE) {
+		$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+		foreach ( $result as $row ) {
+			$body [] = [ 
+					'id' => $row ['id'],
+					'tombtype' => $row ['tombtype'] 
+			];
+		}
+	}
+	$response->getBody ()->write ( json_encode ( $body ) );
+	return $response;
+}
+/*
+ * 新增维修
+ */
+function handle_tomb_addmaintenance($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'zone', $_POST ) || ! key_exists ( 'row', $_POST ) || ! key_exists ( 'col', $_POST ) || ! key_exists ( 'staff', $_POST ) || ! key_exists ( 'price', $_POST ))
+		return $response->withStatus ( 404 );
+	
+	$requestdate = date ( "Y-m-d", $_SERVER ['REQUEST_TIME'] );
+	$sql = "insert into maintenance (zone,row,col,date,price,staff) values ({$_POST['zone']},{$_POST['row']},{$_POST['col']},'{$requestdate}',{$_POST['price']},'{$_POST['staff']}')";
+	$db = new DataBase ();
+	$affectedrow = $db->pdo->exec ( $sql );
+	$response->getBody ()->write ( json_encode ( [ 
+			'status' => $affectedrow,
+			'msg' => $affectedrow == 0 ? '新增失败，检查参数' : "新增维修成功：{$affectedrow}项" 
+	] ) );
+	return $response;
+}
+
+/*
+ * 更新维修
+ */
+function handle_tomb_updatemaintenance($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'zone', $_POST ) || ! key_exists ( 'row', $_POST ) || ! key_exists ( 'col', $_POST ) || ! key_exists ( 'staff', $_POST ) || ! key_exists ( 'price', $_POST ) || ! key_exists ( 'id', $_POST ))
+		return $response->withStatus ( 404 );
+	
+	$sql = "update maintenance set zone = {$_POST['zone']},row = {$_POST['row']},col= {$_POST['col']},price = {$_POST['price']},staff = '{$_POST['staff']}'  where id = {$_POST['id']}";
+	$db = new DataBase ();
+	$affectedrow = $db->pdo->exec ( $sql );
+	$response->getBody ()->write ( json_encode ( [ 
+			'status' => $affectedrow,
+			'msg' => $affectedrow == 0 ? '修改失败，检查参数' : "修改维修成功：{$affectedrow}项" 
+	] ) );
+	return $response;
+}
+
+/*
+ * 列出维修
+ */
+function handle_tomb_listmaintenance($this, $request, $response, $args) {
+	// get 方法
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	$sql = "select * from maintenance ";
+	
+	$hasarg = FALSE;
+	if (key_exists ( "zone", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['zone']} =zone ");
+		$hasarg = True;
+	}
+	if (key_exists ( "row", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['row']} =row ");
+		$hasarg = True;
+	}
+	if (key_exists ( "col", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['col']} =col ");
+		$hasarg = True;
+	}
+	
+	if ($hasarg == FALSE) {
+		$sql .= " limit 100";
+	}
+	$db = new DataBase ();
+	$result = $db->pdo->query ( $sql );
+	$body = [ ];
+	if ($result != FALSE) {
+		$result = $result->fetchAll ( PDO::FETCH_ASSOC );
+		foreach ( $result as $row ) {
+			$body [] = [ 
+					'id' => $row ['id'],
+					'zone' => $row ['zone'],
+					'row' => $row ['row'],
+					'col' => $row ['col'],
+					'date' => $row ['date'],
+					'price' => $row ['price'],
+					'staff' => $row ['staff'] 
+			];
+		}
+	}
+	
+	$response->getBody ()->write ( json_encode ( $body ) );
+	
+	return $response;
+}
+
+/*
+ * 删除维修
+ */
+function handle_tomb_deletemaintenance($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'id', $_POST ))
+		return $response->withStatus ( 404 );
+	
+	$sql = "delete from maintenance where id = {$_POST['id']}";
+	$db = new DataBase ();
+	$affectedrow = $db->pdo->exec ( $sql );
+	$response->getBody ()->write ( json_encode ( [ 
+			'status' => $affectedrow,
+			'msg' => $affectedrow == 0 ? '删除失败，不存在的id，检查参数' : "删除成功：{$affectedrow}项" 
+	] ) );
+	return $response;
+}
+/*
+ * 安葬登记
+ */
+function handle_tomb_updatebury($this, $request, $response, $args) {
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'datawrite' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	if (! key_exists ( 'zone', $_POST ) ||! key_exists ( 'row', $_POST ) ||! key_exists ( 'col', $_POST ) || ! key_exists ( 'status', $_POST ) || ! key_exists ( 'date', $_POST ))
+		return $response->withStatus ( 404 );
+	
+	$sql = "update tomb set burystatus={$_POST['status']},burydate='{$_POST['date']}' where zone = {$_POST['zone']} and row = {$_POST['row']} and col = {$_POST['col']}";
+	$db = new DataBase ();
+	$affectedrow = $db->pdo->exec ( $sql );
+	$response->getBody ()->write ( json_encode ( [ 
+			'status' => $affectedrow,
+			'msg' => $affectedrow == 0 ? '登记失败，不存在的id，检查参数' : "登记成功：{$affectedrow}项" 
+	] ) );
+	return $response;
+}
+/*
+ * 墓穴搜索
+ * */
+function handle_tomb_search($this,$request, $response, $args){
+	// get method
+	$auth = new AuthObject ( $_COOKIE ['token'] );
+	$user = new UserObject ( $auth->userid );
+	
+	if (strpos ( $user->allow, 'admin' ) === FALSE && strpos ( $user->allow, 'dataread' ) === FALSE) {
+		return $response->withStatus ( 403 );
+	}
+	
+	$sql = " from tomb left join tombtype on tomb.typecode = tombtype.id left join customer on tomb.customerid = customer.id ";
+	$checklist = [
+			'typecode',
+			'statuscode',
+	];
+	$hasarg = FALSE;
+	foreach ( $checklist as $arg ) {
+		if (key_exists ( $arg, $_GET )) {
+			$sql .= ((! $hasarg ? " where " : " and ") . "{$arg} = {$_GET[$arg]} ");
+			$hasarg = True;
+		}
+	}
+	if (key_exists ( "zone_from", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['zone_from']} <= zone ");
+		$hasarg = True;
+	}
+	if (key_exists ( "zone_to", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['zone_to']} >= zone ");
+		$hasarg = True;
+	}
+	if (key_exists ( "row_from", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['row_from']} <= row ");
+		$hasarg = True;
+	}
+	if (key_exists ( "row_to", $_GET )) {
+		$sql .= ((! $hasarg ? " where " : " and ") . "{$_GET['row_to']} >= row ");
+		$hasarg = True;
+	}
+	
+	if (key_exists ( "orderby", $_GET )) {
+		if ($_GET ['orderby'] == 'position') {	
+		$sql .= "order by zone,row asc";
+		} else if ($_GET ['orderby'] == 'date' && $_GET ['statuscode'] == 4) {
+			$sql .= "order by validdate asc";
+		}
+	}
+	
+	$sqlcount = "select count(distinct tomb.id) as total ".$sql;
+	
+	if(key_exists('page', $_GET)){
+		$si = ($_GET['page']-1)*100;
+		$sql .= " limit {$si},100";
+	}
+	$sql = "select *, tomb.status as status, tomb.id as id".$sql;
+	$db = new DataBase ();
+	$ridresult = $db->pdo->query ( $sql );
+	$body = [];
+	if ($ridresult != FALSE) {
+		$ridresult = $ridresult->fetchAll ( PDO::FETCH_ASSOC );
+		foreach ($ridresult as $rid){
+			if($rid['customerid']!= NULL){
+				$sql = "select distinct rid from customer where id = {$rid['customerid']}";
+				$rid['rid'] =  $db->pdo->query ( $sql )->fetchAll(PDO::FETCH_ASSOC)[0]['rid'];
+			}else{
+				$rid['rid'] = "";
+			}
+			//var_dump($rid);
+			$body[] = [
+					'zone'=>$rid['zone'],
+					'row'=>$rid['row'],
+					'col'=>$rid['col'],
+					'tombtype'=>$rid['tombtype'],
+					'tombstatus'=>$rid['status'],
+					'dealprice'=>$rid['dealprice'],
+					'rid'=>$rid['rid'],
+					'cu_name'=>$rid['cu_name'],
+					'phone'=>$rid['phone'],
+					'requestdate'=>$rid['requestdate'],
+					'validdate'=>$rid['validdate'],
+					'totalPages'=>ceil($rid['total']/100)
+			];
+		}
+		
+		$response->getBody()->write(json_encode($body));
+	}
+	return $response;
+}
+
+ 
